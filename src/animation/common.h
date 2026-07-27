@@ -115,7 +115,7 @@ double find_animation_curve_at(double t, int32_t type) {
 static bool scene_node_snapshot(struct wlr_scene_node *node, int32_t lx,
 								int32_t ly,
 								struct wlr_scene_tree *snapshot_tree) {
-	if (!node->enabled && node->type != WLR_SCENE_NODE_TREE) {
+	if (!node->enabled) {
 		return true;
 	}
 
@@ -129,31 +129,42 @@ static bool scene_node_snapshot(struct wlr_scene_node *node, int32_t lx,
 
 		struct wlr_scene_node *child;
 		wl_list_for_each(child, &scene_tree->children, link) {
-			scene_node_snapshot(child, lx, ly, snapshot_tree);
+			if (!scene_node_snapshot(child, lx, ly, snapshot_tree))
+				return false;
 		}
 		break;
 	}
 	case WLR_SCENE_NODE_RECT: {
-		// struct wlr_scene_rect *scene_rect = wlr_scene_rect_from_node(node);
-
-		// struct wlr_scene_rect *snapshot_rect =
-		// 	wlr_scene_rect_create(snapshot_tree, scene_rect->width,
-		// 						  scene_rect->height, scene_rect->color);
-		// snapshot_rect->node.data = scene_rect->node.data;
-		// if (snapshot_rect == NULL) {
-		// 	return false;
-		// }
-
-		// wlr_scene_rect_set_clipped_region(scene_rect,
-		// 								  snapshot_rect->clipped_region);
-		// wlr_scene_rect_set_backdrop_blur(scene_rect, false);
-		// wlr_scene_rect_set_backdrop_blur_optimized(
-		// 	scene_rect, snapshot_rect->backdrop_blur_optimized);
-		// wlr_scene_rect_set_corner_radius(
-		// 	scene_rect, snapshot_rect->corner_radius, snapshot_rect->corners);
-		// wlr_scene_rect_set_color(scene_rect, snapshot_rect->color);
-
-		// snapshot_node = &snapshot_rect->node;
+		struct wlr_scene_rect *scene_rect = wlr_scene_rect_from_node(node);
+		struct wlr_scene_tree *wrapper = wlr_scene_tree_create(snapshot_tree);
+		if (wrapper == NULL)
+			return false;
+		struct wlr_scene_rect *snapshot_rect = wlr_scene_rect_create(wrapper,
+			scene_rect->width, scene_rect->height, scene_rect->color);
+		if (snapshot_rect == NULL) {
+			wlr_scene_node_destroy(&wrapper->node);
+			return false;
+		}
+		SnapshotMetadata *meta = calloc(1, sizeof(*meta));
+		if (meta == NULL) {
+			wlr_scene_node_destroy(&wrapper->node);
+			return false;
+		}
+		*meta = (SnapshotMetadata){
+			.type = Snapshot,
+			.orig_x = lx,
+			.orig_y = ly,
+			.orig_width = scene_rect->width,
+			.orig_height = scene_rect->height,
+		};
+		meta->destroy.notify = handle_snapshot_meta_destroy;
+		wl_signal_add(&wrapper->node.events.destroy, &meta->destroy);
+		wrapper->node.data = meta;
+		wlr_scene_rect_set_corner_radii(snapshot_rect, scene_rect->corners);
+		wlr_scene_rect_set_clipped_region(snapshot_rect,
+			scene_rect->clipped_region);
+		snapshot_rect->node.data = scene_rect->node.data;
+		snapshot_node = &wrapper->node;
 		break;
 	}
 	case WLR_SCENE_NODE_BUFFER: {
@@ -176,6 +187,8 @@ static bool scene_node_snapshot(struct wlr_scene_node *node, int32_t lx,
 		meta->orig_width = scene_buffer->dst_width;
 		meta->orig_height = scene_buffer->dst_height;
 		meta->type = Snapshot;
+		meta->orig_x = lx;
+		meta->orig_y = ly;
 
 		struct wlr_scene_surface *scene_surface =
 			wlr_scene_surface_try_from_buffer(scene_buffer);
@@ -231,21 +244,38 @@ static bool scene_node_snapshot(struct wlr_scene_node *node, int32_t lx,
 		struct wlr_scene_shadow *scene_shadow =
 			wlr_scene_shadow_from_node(node);
 
+		struct wlr_scene_tree *wrapper = wlr_scene_tree_create(snapshot_tree);
+		if (wrapper == NULL)
+			return false;
 		struct wlr_scene_shadow *snapshot_shadow = wlr_scene_shadow_create(
-			snapshot_tree, scene_shadow->width, scene_shadow->height,
+			wrapper, scene_shadow->width, scene_shadow->height,
 			scene_shadow->corner_radius, scene_shadow->blur_sigma,
 			scene_shadow->color);
 		if (snapshot_shadow == NULL) {
+			wlr_scene_node_destroy(&wrapper->node);
 			return false;
 		}
-		snapshot_node = &snapshot_shadow->node;
+		SnapshotMetadata *meta = calloc(1, sizeof(*meta));
+		if (meta == NULL) {
+			wlr_scene_node_destroy(&wrapper->node);
+			return false;
+		}
+		*meta = (SnapshotMetadata){
+			.type = Snapshot,
+			.orig_x = lx,
+			.orig_y = ly,
+			.orig_width = scene_shadow->width,
+			.orig_height = scene_shadow->height,
+		};
+		meta->destroy.notify = handle_snapshot_meta_destroy;
+		wl_signal_add(&wrapper->node.events.destroy, &meta->destroy);
+		wrapper->node.data = meta;
+		snapshot_node = &wrapper->node;
 
 		wlr_scene_shadow_set_clipped_region(snapshot_shadow,
 											scene_shadow->clipped_region);
 
 		snapshot_shadow->node.data = scene_shadow->node.data;
-
-		wlr_scene_node_set_enabled(&snapshot_shadow->node, false);
 
 		break;
 	}

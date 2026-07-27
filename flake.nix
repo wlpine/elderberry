@@ -19,8 +19,8 @@
       ];
 
       flake = {
-        hmModules.mango = import ./nix/hm-modules.nix self;
-        nixosModules.mango = import ./nix/nixos-modules.nix self;
+        hmModules.elderberry = import ./nix/hm-modules.nix self;
+        nixosModules.elderberry = import ./nix/nixos-modules.nix self;
       };
 
       perSystem = {
@@ -29,7 +29,7 @@
         ...
       }: let
         inherit (pkgs) callPackage;
-        mango = callPackage ./nix {
+        elderberry = callPackage ./nix {
           scenefx = inputs.scenefx.packages.${pkgs.stdenv.hostPlatform.system}.default;
         };
         shellOverride = old: {
@@ -37,22 +37,22 @@
           buildInputs = old.buildInputs ++ [];
         };
       in {
-        packages.default = mango;
+        packages.default = elderberry;
         overlayAttrs = {
-          inherit (config.packages) mango;
+          inherit (config.packages) elderberry;
         };
         packages = {
-          inherit mango;
+          inherit elderberry;
           hm-options-json = pkgs.callPackage (import ./nix/generate-options.nix self) {
             module = ./nix/hm-modules.nix;
-            optionPrefix = "wayland.windowManager.mango.";
+            optionPrefix = "wayland.windowManager.elderberry.";
           };
           nixos-options-json = pkgs.callPackage (import ./nix/generate-options.nix self) {
             module = ./nix/nixos-modules.nix;
-            optionPrefix = "programs.mango.";
+            optionPrefix = "programs.elderberry.";
           };
         };
-        devShells.default = mango.overrideAttrs shellOverride;
+        devShells.default = elderberry.overrideAttrs shellOverride;
         formatter = pkgs.alejandra;
       };
       systems = [

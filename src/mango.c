@@ -89,10 +89,14 @@
 #include <wlr/types/wlr_xdg_foreign_v2.h>
 #include <wlr/types/wlr_xdg_output_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_xdg_toplevel_icon_v1.h>
 #include <wlr/util/log.h>
 #include <wlr/util/region.h>
 #include <wordexp.h>
 #include <xkbcommon/xkbcommon.h>
+#ifdef HAVE_FRAMETAIL
+#include <frametail/lua.h>
+#endif
 #ifdef XWAYLAND
 #include <X11/Xlib.h>
 #include <wlr/xwayland.h>
@@ -338,6 +342,11 @@ struct Client {
 	struct wlr_scene_rect *shield;
 	struct wlr_scene_blur *blur;
 	struct wlr_scene_tree *scene_surface;
+#ifdef HAVE_FRAMETAIL
+	struct frametail_lua_decoration *frametail_handle;
+	struct frametail_decoration *frametail_decoration;
+	struct frametail_extents frametail_extents;
+#endif
 	struct wlr_scene_tree *image_capture_tree;
 	struct wlr_scene *image_capture_scene;
 	struct wlr_ext_image_capture_source_v1 *image_capture_source;
@@ -359,7 +368,9 @@ struct Client {
 	struct wl_listener unmap;
 	struct wl_listener destroy;
 	struct wl_listener set_title;
+	struct wl_listener set_app_id;
 	struct wl_listener fullscreen;
+	struct wlr_xdg_toplevel_icon_v1 *icon;
 #ifdef XWAYLAND
 	struct wl_listener activate;
 	struct wl_listener associate;
@@ -562,6 +573,7 @@ struct Monitor {
 	bool skiping_frame;
 	uint32_t resizing_count_pending;
 	uint32_t resizing_count_current;
+	struct wl_list dwl_ipc_outputs;
 
 	int32_t gappih; /* horizontal gap between windows */
 	int32_t gappiv; /* vertical gap between windows */
@@ -590,6 +602,12 @@ struct Monitor {
 	bool prefer_disable;
 	bool is_hdr_enabling;
 };
+
+typedef struct {
+	struct wl_list link;
+	struct wl_resource *resource;
+	Monitor *mon;
+} DwlIpcOutput;
 
 typedef struct {
 	struct wlr_pointer_constraint_v1 *constraint;
@@ -646,6 +664,8 @@ struct TagScrollerState {
 
 typedef struct {
 	uint32_t type; // must at first in struct
+	int32_t orig_x;
+	int32_t orig_y;
 	int32_t orig_width;
 	int32_t orig_height;
 	bool is_subsurface;
@@ -953,6 +973,19 @@ static bool mango_scene_output_commit(struct wlr_scene_output *scene_output,
 static bool mango_output_commit(Monitor *m);
 static bool check_tearing_frame_allow(Monitor *m);
 static void client_set_group_config(Client *c);
+static void updateappid(struct wl_listener *listener, void *data);
+#ifdef HAVE_FRAMETAIL
+static bool mango_frametail_reload(void);
+static void mango_frametail_create(Client *c);
+static void mango_frametail_destroy(Client *c);
+static void mango_frametail_update(Client *c);
+static void mango_frametail_sync_geometry(Client *c, struct wlr_box frame);
+static bool mango_frametail_pointer_motion(Client *c);
+static bool mango_frametail_pointer_button(Client *c,
+	struct wlr_pointer_button_event *event);
+static bool mango_frametail_corner_resize(Client *c,
+	struct wlr_pointer_button_event *event);
+#endif
 
 #include "data/static_keymap.h"
 #include "dispatch/bind_declare.h"
@@ -975,6 +1008,7 @@ static struct wlr_allocator *alloc;
 static struct wlr_compositor *compositor;
 
 static struct wlr_xdg_shell *xdg_shell;
+static struct wlr_xdg_toplevel_icon_manager_v1 *xdg_toplevel_icon_manager;
 static struct wlr_xdg_activation_v1 *activation;
 static struct wlr_xdg_decoration_manager_v1 *xdg_decoration_mgr;
 static struct wl_list clients; /* tiling order */
@@ -1016,7 +1050,14 @@ static struct wl_list inputdevices;
 static struct wl_list keyboard_shortcut_inhibitors;
 static uint32_t cursor_mode;
 static Client *grabc, *dropc;
+#ifdef HAVE_FRAMETAIL
+static struct frametail_lua_runtime *frametail_runtime;
+static Client *frametail_hover_client;
+static Client *frametail_pressed_client;
+static bool frametail_staging;
+#endif
 static int32_t rzcorner;
+static int32_t resize_corner_override = -1;
 static int32_t grabcx, grabcy; /* client-relative */
 
 static struct wlr_ext_foreign_toplevel_image_capture_source_manager_v1
@@ -1075,7 +1116,7 @@ static char *env_vars[] = {"DISPLAY",
 						   "XDG_SESSION_TYPE",
 						   "XCURSOR_THEME",
 						   "XCURSOR_SIZE",
-						   "MANGO_INSTANCE_SIGNATURE",
+						   "ELDERBERRY_INSTANCE_SIGNATURE",
 						   NULL};
 static struct {
 	enum wp_cursor_shape_device_v1_shape shape;
@@ -1123,6 +1164,7 @@ static struct wl_listener new_output = {.notify = createmon};
 static struct wl_listener new_xdg_toplevel = {.notify = createnotify};
 static struct wl_listener new_xdg_popup = {.notify = createpopup};
 static struct wl_listener new_xdg_decoration = {.notify = createdecoration};
+static struct wl_listener set_xdg_toplevel_icon;
 static struct wl_listener new_layer_surface = {.notify = createlayersurface};
 static struct wl_listener output_mgr_apply = {.notify = outputmgrapply};
 static struct wl_listener output_mgr_test = {.notify = outputmgrtest};
@@ -1178,6 +1220,9 @@ static struct wl_event_source *sync_keymap;
 #include "layout/overview.h"
 #include "layout/scroll.h"
 #include "layout/vertical.h"
+#ifdef HAVE_FRAMETAIL
+#include "frametail-integration.h"
+#endif
 
 void client_change_mon(Client *c, Monitor *m) {
 	setmon(c, m, c->tags, true);
@@ -1189,8 +1234,8 @@ void client_change_mon(Client *c, Monitor *m) {
 
 void applybounds(Client *c, struct wlr_box *bbox) {
 	/* set minimum possible */
-	c->geom.width = MANGO_MAX(1 + 2 * (int32_t)c->bw, c->geom.width);
-	c->geom.height = MANGO_MAX(1 + 2 * (int32_t)c->bw, c->geom.height);
+	c->geom.width = MANGO_MAX(1 + client_frame_width(c), c->geom.width);
+	c->geom.height = MANGO_MAX(1 + client_frame_height(c), c->geom.height);
 
 	if (c->geom.x >= bbox->x + bbox->width)
 		c->geom.x = bbox->x + bbox->width - c->geom.width;
@@ -1233,6 +1278,9 @@ void clear_fullscreen_flag(Client *c) {
 
 void client_pending_fullscreen_state(Client *c, int32_t isfullscreen) {
 	c->isfullscreen = isfullscreen;
+#ifdef HAVE_FRAMETAIL
+	mango_frametail_update(c);
+#endif
 
 	if (c->foreign_toplevel && !c->iskilling)
 		wlr_foreign_toplevel_handle_v1_set_fullscreen(c->foreign_toplevel,
@@ -1241,6 +1289,9 @@ void client_pending_fullscreen_state(Client *c, int32_t isfullscreen) {
 
 void client_pending_maximized_state(Client *c, int32_t ismaximized) {
 	c->ismaximizescreen = ismaximized;
+#ifdef HAVE_FRAMETAIL
+	mango_frametail_update(c);
+#endif
 	if (c->foreign_toplevel && !c->iskilling)
 		wlr_foreign_toplevel_handle_v1_set_maximized(c->foreign_toplevel,
 													 ismaximized);
@@ -2428,6 +2479,9 @@ bool handle_buttonpress(struct wlr_pointer_button_event *event) {
 	struct wlr_surface *surface;
 	Client *tmpc = NULL;
 	int32_t ji;
+#ifdef HAVE_FRAMETAIL
+	bool frametail_handled;
+#endif
 	const MouseBinding *m;
 	struct wlr_surface *old_pointer_focus_surface =
 		seat->pointer_state.focused_surface;
@@ -2446,8 +2500,8 @@ bool handle_buttonpress(struct wlr_pointer_button_event *event) {
 		if (locked)
 			break;
 
-		xytonode(cursor->x, cursor->y, &surface, NULL, NULL, &gb, NULL, NULL);
-		if (toplevel_from_wlr_surface(surface, &c, &l) >= 0) {
+		xytonode(cursor->x, cursor->y, &surface, &c, &l, &gb, NULL, NULL);
+		if ((!c && !l ? toplevel_from_wlr_surface(surface, &c, &l) : 0) >= 0) {
 			if (c && c->scene->node.enabled &&
 				(!client_is_unmanaged(c) || client_wants_focus(c)))
 				focusclient(c, 1);
@@ -2464,6 +2518,12 @@ bool handle_buttonpress(struct wlr_pointer_button_event *event) {
 				focuslayer(l);
 			}
 		}
+#ifdef HAVE_FRAMETAIL
+		if (mango_frametail_corner_resize(c, event))
+			return true;
+		if (mango_frametail_pointer_button(c, event))
+			return true;
+#endif
 
 		// overview模式下鼠标左键跳转，右键关闭窗口
 		if (selmon && selmon->isoverview && event->button == BTN_LEFT && c) {
@@ -2505,6 +2565,14 @@ bool handle_buttonpress(struct wlr_pointer_button_event *event) {
 		}
 		break;
 	case WL_POINTER_BUTTON_STATE_RELEASED:
+#ifdef HAVE_FRAMETAIL
+		frametail_handled = mango_frametail_pointer_button(NULL, event);
+		if (frametail_handled && cursor_mode != CurMove &&
+			cursor_mode != CurResize) {
+			cursor_mode = CurNormal;
+			return true;
+		}
+#endif
 		/* If you released any buttons, we exit interactive move/resize mode. */
 		if (!locked && cursor_mode != CurNormal && cursor_mode != CurPressed) {
 			cursor_mode = CurNormal;
@@ -2630,6 +2698,7 @@ void cleanuplisteners(void) {
 	wl_list_remove(&new_output.link);
 	wl_list_remove(&new_xdg_toplevel.link);
 	wl_list_remove(&new_xdg_decoration.link);
+	wl_list_remove(&set_xdg_toplevel_icon.link);
 	wl_list_remove(&new_xdg_popup.link);
 	wl_list_remove(&new_layer_surface.link);
 	wl_list_remove(&output_mgr_apply.link);
@@ -2667,6 +2736,12 @@ void cleanup(void) {
 #endif
 
 	wl_display_destroy_clients(dpy);
+#ifdef HAVE_FRAMETAIL
+	if (frametail_runtime) {
+		frametail_lua_runtime_destroy(frametail_runtime);
+		frametail_runtime = NULL;
+	}
+#endif
 	if (child_pid > 0) {
 		kill(-child_pid, SIGTERM);
 		waitpid(child_pid, NULL, 0);
@@ -2692,9 +2767,12 @@ void cleanup(void) {
 void cleanupmon(struct wl_listener *listener, void *data) {
 	Monitor *m = wl_container_of(listener, m, destroy);
 	LayerSurface *l = NULL, *tmp = NULL;
+	DwlIpcOutput *ipc_output, *ipc_tmp;
 	uint32_t i;
 
 	m->iscleanuping = true;
+	wl_list_for_each_safe(ipc_output, ipc_tmp, &m->dwl_ipc_outputs, link)
+		wl_resource_destroy(ipc_output->resource);
 
 	/* m->layers[i] are intentionally not unlinked */
 	for (i = 0; i < LENGTH(m->layers); i++) {
@@ -3026,12 +3104,6 @@ void commitnotify(struct wl_listener *listener, void *data) {
 
 		wlr_xdg_toplevel_set_wm_capabilities(c->surface.xdg->toplevel, wm_caps);
 
-		if (c->mon) {
-			wlr_xdg_toplevel_set_bounds(c->surface.xdg->toplevel,
-										c->mon->w.width - 2 * c->bw,
-										c->mon->w.height - 2 * c->bw);
-		}
-
 		if (c->decoration)
 			requestdecorationmode(&c->set_decoration_mode, c->decoration);
 		return;
@@ -3047,8 +3119,8 @@ void commitnotify(struct wl_listener *listener, void *data) {
 
 	if (!c->dirty) {
 		new_geo = &c->surface.xdg->geometry;
-		c->dirty = new_geo->width != c->geom.width - 2 * c->bw ||
-				   new_geo->height != c->geom.height - 2 * c->bw ||
+		c->dirty = new_geo->width != c->geom.width - client_frame_width(c) ||
+				   new_geo->height != c->geom.height - client_frame_height(c) ||
 				   new_geo->x != 0 || new_geo->y != 0;
 	}
 
@@ -3058,8 +3130,8 @@ void commitnotify(struct wl_listener *listener, void *data) {
 	resize(c, c->geom, 0);
 
 	new_geo = &c->surface.xdg->geometry;
-	c->dirty = new_geo->width != c->geom.width - 2 * c->bw ||
-			   new_geo->height != c->geom.height - 2 * c->bw ||
+	c->dirty = new_geo->width != c->geom.width - client_frame_width(c) ||
+			   new_geo->height != c->geom.height - client_frame_height(c) ||
 			   new_geo->x != 0 || new_geo->y != 0;
 }
 
@@ -3103,10 +3175,13 @@ static bool popup_unconstrain(Popup *popup) {
 		constraint_box.width = usable.width;
 		constraint_box.height = usable.height;
 	} else {
+		struct mango_frame_extents extents = client_frame_extents(c);
 		constraint_box.x =
-			usable.x - (c->geom.x + c->bw - c->surface.xdg->current.geometry.x);
+			usable.x - (c->geom.x + extents.left -
+				c->surface.xdg->current.geometry.x);
 		constraint_box.y =
-			usable.y - (c->geom.y + c->bw - c->surface.xdg->current.geometry.y);
+			usable.y - (c->geom.y + extents.top -
+				c->surface.xdg->current.geometry.y);
 		constraint_box.width = usable.width;
 		constraint_box.height = usable.height;
 	}
@@ -3463,6 +3538,7 @@ void createmon(struct wl_listener *listener, void *data) {
 
 	m->wlr_output = wlr_output;
 	m->wlr_output->data = m;
+	wl_list_init(&m->dwl_ipc_outputs);
 
 	for (i = 0; i < LENGTH(m->layers); i++)
 		wl_list_init(&m->layers[i]);
@@ -3675,6 +3751,23 @@ createnotify(struct wl_listener *listener, void *data) {
 	LISTEN(&toplevel->events.request_maximize, &c->maximize, maximizenotify);
 	LISTEN(&toplevel->events.request_minimize, &c->minimize, minimizenotify);
 	LISTEN(&toplevel->events.set_title, &c->set_title, updatetitle);
+	LISTEN(&toplevel->events.set_app_id, &c->set_app_id, updateappid);
+}
+
+static void setxdgtoplevelicon(struct wl_listener *listener, void *data) {
+	(void)listener;
+	struct wlr_xdg_toplevel_icon_manager_v1_set_icon_event *event = data;
+	Client *c = event->toplevel->base->data;
+	if (!c)
+		return;
+	struct wlr_xdg_toplevel_icon_v1 *icon = event->icon ?
+		wlr_xdg_toplevel_icon_v1_ref(event->icon) : NULL;
+	if (c->icon)
+		wlr_xdg_toplevel_icon_v1_unref(c->icon);
+	c->icon = icon;
+#ifdef HAVE_FRAMETAIL
+	mango_frametail_update(c);
+#endif
 }
 
 void destroyinputdevice(struct wl_listener *listener, void *data) {
@@ -3886,8 +3979,9 @@ void cursorwarptohint(void) {
 
 	toplevel_from_wlr_surface(active_constraint->surface, &c, NULL);
 	if (c && active_constraint->current.cursor_hint.enabled) {
-		wlr_cursor_warp(cursor, NULL, sx + c->geom.x + c->bw,
-						sy + c->geom.y + c->bw);
+		struct mango_frame_extents extents = client_frame_extents(c);
+		wlr_cursor_warp(cursor, NULL, sx + c->geom.x + extents.left,
+						sy + c->geom.y + extents.top);
 		wlr_seat_pointer_warp(active_constraint->seat, sx, sy);
 	}
 }
@@ -3972,8 +4066,11 @@ void // 0.7 custom
 destroynotify(struct wl_listener *listener, void *data) {
 	/* Called when the xdg_toplevel is destroyed. */
 	Client *c = wl_container_of(listener, c, destroy);
+	if (c->icon)
+		wlr_xdg_toplevel_icon_v1_unref(c->icon);
 	wl_list_remove(&c->destroy.link);
 	wl_list_remove(&c->set_title.link);
+	wl_list_remove(&c->set_app_id.link);
 	wl_list_remove(&c->fullscreen.link);
 	wl_list_remove(&c->maximize.link);
 	wl_list_remove(&c->minimize.link);
@@ -4071,13 +4168,20 @@ void focusclient(Client *c, int32_t lift) {
 		check_keep_idle_inhibit(c);
 		check_vrr_enable(c);
 
-		if (last_focus_client && !last_focus_client->iskilling &&
+	if (last_focus_client && !last_focus_client->iskilling &&
 			last_focus_client != c) {
 			last_focus_client->isfocusing = false;
 			client_set_unfocused_opacity_animation(last_focus_client);
+#ifdef HAVE_FRAMETAIL
+			mango_frametail_update(last_focus_client);
+#endif
 		}
 
+		c->isurgent = 0;
 		client_set_focused_opacity_animation(c);
+#ifdef HAVE_FRAMETAIL
+		mango_frametail_update(c);
+#endif
 
 		// decide whether need to re-arrange
 
@@ -4093,7 +4197,6 @@ void focusclient(Client *c, int32_t lift) {
 		}
 
 		// change border color
-		c->isurgent = 0;
 	}
 
 	// update other monitor focus disappear
@@ -4103,6 +4206,9 @@ void focusclient(Client *c, int32_t lift) {
 
 			um->sel->isfocusing = false;
 			client_set_unfocused_opacity_animation(um->sel);
+#ifdef HAVE_FRAMETAIL
+			mango_frametail_update(um->sel);
+#endif
 
 			if (um->sel->foreign_toplevel) {
 				wlr_foreign_toplevel_handle_v1_set_activated(
@@ -4855,6 +4961,13 @@ mapnotify(struct wl_listener *listener, void *data) {
 	wl_list_insert(&fstack, &c->flink);
 
 	applyrules(c);
+#ifdef HAVE_FRAMETAIL
+	mango_frametail_create(c);
+#endif
+	if (c->mon && !client_is_x11(c))
+		wlr_xdg_toplevel_set_bounds(c->surface.xdg->toplevel,
+			c->mon->w.width - client_frame_width(c),
+			c->mon->w.height - client_frame_height(c));
 
 	if (!c->isfloating || c->force_tiled_state) {
 		client_set_tiled(c, WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT |
@@ -4864,7 +4977,9 @@ mapnotify(struct wl_listener *listener, void *data) {
 	// apply buffer effects of client
 	wlr_scene_node_for_each_buffer(&c->scene_surface->node,
 								   iter_xdg_scene_buffers, c);
-	wlr_scene_node_set_position(&c->scene_surface->node, c->bw, c->bw);
+	struct mango_frame_extents frame_extents = client_frame_extents(c);
+	wlr_scene_node_set_position(&c->scene_surface->node, frame_extents.left,
+		frame_extents.top);
 
 	// set border color
 	setborder_color(c);
@@ -4988,10 +5103,12 @@ void resize_floating_window(Client *grabc) {
 	int cdx = (int)round(cursor->x) - grabcx;
 	int cdy = (int)round(cursor->y) - grabcy;
 
-	cdx = !(rzcorner & 1) && grabc->geom.width - 2 * (int)grabc->bw - cdx < 1
+	cdx = !(rzcorner & 1) &&
+			grabc->geom.width - client_frame_width(grabc) - cdx < 1
 			  ? 0
 			  : cdx;
-	cdy = !(rzcorner & 2) && grabc->geom.height - 2 * (int)grabc->bw - cdy < 1
+	cdy = !(rzcorner & 2) &&
+			grabc->geom.height - client_frame_height(grabc) - cdy < 1
 			  ? 0
 			  : cdy;
 
@@ -5033,8 +5150,10 @@ void motionnotify(uint32_t time, struct wlr_input_device *device, double dx,
 
 				toplevel_from_wlr_surface(active_constraint->surface, &c, NULL);
 				if (c) {
-					sx = cursor->x - c->geom.x - c->bw;
-					sy = cursor->y - c->geom.y - c->bw;
+					struct mango_frame_extents extents =
+						client_frame_extents(c);
+					sx = cursor->x - c->geom.x - extents.left;
+					sy = cursor->y - c->geom.y - extents.top;
 					if (wlr_region_confine(&active_constraint->region, sx, sy,
 										   sx + dx, sy + dy, &sx_confined,
 										   &sy_confined)) {
@@ -5118,6 +5237,15 @@ void motionnotify(uint32_t time, struct wlr_input_device *device, double dx,
 			resize_tile_client(grabc, true, 0, 0, time);
 		}
 	}
+
+#ifdef HAVE_FRAMETAIL
+	if (mango_frametail_pointer_motion(c)) {
+		wlr_seat_pointer_notify_clear_focus(seat);
+		if (!cursor_hidden)
+			wlr_cursor_set_xcursor(cursor, cursor_mgr, "default");
+		return;
+	}
+#endif
 
 	/* If there's no client surface under the cursor, set the cursor image
 	 * to a default. This is what makes the cursor image appear when you
@@ -5715,6 +5843,8 @@ setfloating(Client *c, int32_t floating) {
 
 	Client *fc = NULL;
 	struct wlr_box target_box;
+	if (!c)
+		return;
 	int32_t old_floating_state = c->isfloating;
 	c->isfloating = floating;
 	bool window_size_outofrange = false;
@@ -5803,6 +5933,9 @@ setfloating(Client *c, int32_t floating) {
 	}
 
 	setborder_color(c);
+#ifdef HAVE_FRAMETAIL
+	mango_frametail_update(c);
+#endif
 	printstatus(IPC_WATCH_ARRANGGE);
 }
 
@@ -6191,12 +6324,13 @@ void handle_print_status(struct wl_listener *listener, void *data) {
 		}
 
 		mango_ext_workspace_printstatus(m);
+		dwl_ipc_output_printstatus(m);
 	}
 }
 
 void setup(void) {
 
-	setenv("XDG_CURRENT_DESKTOP", "mango", 1);
+	setenv("XDG_CURRENT_DESKTOP", PROGRAM_NAME, 1);
 	setenv("_JAVA_AWT_WM_NONREPARENTING", "1", 1);
 
 	parse_config();
@@ -6357,6 +6491,13 @@ void setup(void) {
 	wl_signal_add(&ext_image_copy_capture_mgr->events.new_session,
 				  &ext_image_copy_capture_mgr_new_session);
 
+	int icon_sizes[] = {16, 24, 32, 48, 64};
+	xdg_toplevel_icon_manager = wlr_xdg_toplevel_icon_manager_v1_create(dpy, 1);
+	wlr_xdg_toplevel_icon_manager_v1_set_sizes(xdg_toplevel_icon_manager,
+		icon_sizes, LENGTH(icon_sizes));
+	LISTEN(&xdg_toplevel_icon_manager->events.set_icon,
+		&set_xdg_toplevel_icon, setxdgtoplevelicon);
+
 	/* Initializes the interface used to implement urgency hints */
 	activation = wlr_xdg_activation_v1_create(dpy);
 	wl_signal_add(&activation->events.request_activate, &request_activate);
@@ -6400,6 +6541,9 @@ void setup(void) {
 	 */
 	wl_list_init(&clients);
 	wl_list_init(&fstack);
+#ifdef HAVE_FRAMETAIL
+	mango_frametail_reload();
+#endif
 	wl_list_init(&fadeout_clients);
 	wl_list_init(&fadeout_layers);
 
@@ -6564,6 +6708,8 @@ void setup(void) {
 
 	// ext-workspace协议
 	workspaces_init();
+	wl_global_create(dpy, &zdwl_ipc_manager_v2_interface, 2, NULL,
+		dwl_ipc_manager_bind);
 #ifdef XWAYLAND
 	/*
 	 * Initialise the XWayland X server.
@@ -7003,6 +7149,9 @@ void unmapnotify(struct wl_listener *listener, void *data) {
 	}
 
 	c->image_capture_source = NULL;
+#ifdef HAVE_FRAMETAIL
+	mango_frametail_destroy(c);
+#endif
 	init_client_properties(c);
 
 	wlr_scene_node_destroy(&c->scene->node);
@@ -7174,8 +7323,32 @@ void updatetitle(struct wl_listener *listener, void *data) {
 				.app_id = c->ext_foreign_toplevel->app_id,
 			});
 	}
+#ifdef HAVE_FRAMETAIL
+	mango_frametail_update(c);
+#endif
 	if (c == focustop(c->mon))
 		printstatus(IPC_WATCH_ARRANGGE);
+}
+
+static void updateappid(struct wl_listener *listener, void *data) {
+	(void)data;
+	Client *c = wl_container_of(listener, c, set_app_id);
+	if (!c || c->iskilling)
+		return;
+	const char *app_id = client_get_appid(c);
+	if (app_id && c->foreign_toplevel)
+		wlr_foreign_toplevel_handle_v1_set_app_id(c->foreign_toplevel, app_id);
+	if (app_id && c->ext_foreign_toplevel) {
+		wlr_ext_foreign_toplevel_handle_v1_update_state(
+			c->ext_foreign_toplevel,
+			&(struct wlr_ext_foreign_toplevel_handle_v1_state){
+				.title = c->ext_foreign_toplevel->title,
+				.app_id = app_id,
+			});
+	}
+#ifdef HAVE_FRAMETAIL
+	mango_frametail_update(c);
+#endif
 }
 
 void // 17 fix to 0.5
@@ -7195,6 +7368,9 @@ urgent(struct wl_listener *listener, void *data) {
 		c->isurgent = 1;
 		if (client_surface(c)->mapped)
 			setborder_color(c);
+#ifdef HAVE_FRAMETAIL
+		mango_frametail_update(c);
+#endif
 		printstatus(IPC_WATCH_ARRANGGE);
 	}
 }
@@ -7420,6 +7596,9 @@ void activatex11(struct wl_listener *listener, void *data) {
 		c->isurgent = 1;
 		if (client_surface(c)->mapped)
 			setborder_color(c);
+#ifdef HAVE_FRAMETAIL
+		mango_frametail_update(c);
+#endif
 	}
 
 	if (need_arrange) {
@@ -7456,10 +7635,11 @@ void configurex11(struct wl_listener *listener, void *data) {
 	}
 
 	if (c->isfloating && c != grabc) {
-		new_geo.x = new_geo.x - c->bw;
-		new_geo.y = new_geo.y - c->bw;
-		new_geo.width = new_geo.width + c->bw * 2;
-		new_geo.height = new_geo.height + c->bw * 2;
+		struct mango_frame_extents extents = client_frame_extents(c);
+		new_geo.x -= extents.left;
+		new_geo.y -= extents.top;
+		new_geo.width += extents.left + extents.right;
+		new_geo.height += extents.top + extents.bottom;
 		fix_xwayland_coordinate(&new_geo);
 
 		resize(c,
@@ -7491,6 +7671,7 @@ void createnotifyx11(struct wl_listener *listener, void *data) {
 		   fullscreennotify);
 	LISTEN(&xsurface->events.set_hints, &c->set_hints, sethints);
 	LISTEN(&xsurface->events.set_title, &c->set_title, updatetitle);
+	LISTEN(&xsurface->events.set_class, &c->set_app_id, updateappid);
 	LISTEN(&xsurface->events.request_maximize, &c->maximize, maximizenotify);
 	LISTEN(&xsurface->events.request_minimize, &c->minimize, minimizenotify);
 }
@@ -7498,14 +7679,12 @@ void createnotifyx11(struct wl_listener *listener, void *data) {
 void commitx11(struct wl_listener *listener, void *data) {
 	Client *c = wl_container_of(listener, c, commmitx11);
 	struct wlr_surface_state *state = &c->surface.xwayland->surface->current;
+	struct wlr_box content = client_content_box(c, c->geom);
 
-	if ((int32_t)c->geom.width - 2 * (int32_t)c->bw == (int32_t)state->width &&
-		(int32_t)c->geom.height - 2 * (int32_t)c->bw ==
-			(int32_t)state->height &&
-		(int32_t)c->surface.xwayland->x ==
-			(int32_t)c->geom.x + (int32_t)c->bw &&
-		(int32_t)c->surface.xwayland->y ==
-			(int32_t)c->geom.y + (int32_t)c->bw) {
+	if (content.width == (int32_t)state->width &&
+		content.height == (int32_t)state->height &&
+		c->surface.xwayland->x == content.x &&
+		c->surface.xwayland->y == content.y) {
 		c->configure_serial = 0;
 	}
 }
@@ -7532,6 +7711,9 @@ void sethints(struct wl_listener *listener, void *data) {
 		return;
 
 	c->isurgent = xcb_icccm_wm_hints_get_urgency(c->surface.xwayland->hints);
+#ifdef HAVE_FRAMETAIL
+	mango_frametail_update(c);
+#endif
 	printstatus(IPC_WATCH_ARRANGGE);
 
 	if (c->isurgent && surface && surface->mapped)
@@ -7577,7 +7759,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		} else if (c == 'd') {
 			cli_debug_log = true;
 		} else if (c == 'v') {
-			printf("mango " VERSION "\n");
+			printf("%s " VERSION "\n", PROGRAM_NAME);
 			return EXIT_SUCCESS;
 		} else if (c == 'c') {
 			snprintf(cli_config_path, sizeof(cli_config_path), "%s", optarg);
@@ -7600,13 +7782,14 @@ int32_t main(int32_t argc, char *argv[]) {
 	cleanup();
 	return EXIT_SUCCESS;
 usage:
-	printf("Usage: mango [OPTIONS]\n"
+	printf("Usage: %s [OPTIONS]\n"
 		   "\n"
 		   "Options:\n"
-		   "  -v             Show mango version\n"
+		   "  -v             Show %s version\n"
 		   "  -d             Enable debug log\n"
 		   "  -c <file>      Use custom configuration file\n"
 		   "  -s <command>   Execute startup command\n"
-		   "  -p             Check configuration file error\n");
+			"  -p             Check configuration file error\n", PROGRAM_NAME,
+			PROGRAM_NAME);
 	return EXIT_SUCCESS;
 }

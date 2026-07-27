@@ -25,7 +25,7 @@
   debug ? false,
 }:
 stdenv.mkDerivation {
-  pname = "mango";
+  pname = "elderberry";
   version = "nightly";
 
   src = builtins.path {
@@ -68,13 +68,12 @@ stdenv.mkDerivation {
     ];
 
   passthru = {
-    providedSessions = ["mango"];
+    providedSessions = ["elderberry"];
   };
 
   meta = {
-    mainProgram = "mango";
-    description = "Practical and Powerful wayland compositor (dwm but wayland)";
-    homepage = "https://github.com/mangowm/mango";
+    mainProgram = "elderberry";
+    description = "Wayland compositor forked from Mango";
     license = lib.licenses.gpl3Plus;
     maintainers = [];
     platforms = lib.platforms.unix;

@@ -4,20 +4,20 @@ self: {
   pkgs,
   ...
 }: let
-  cfg = config.programs.mango;
+  cfg = config.programs.elderberry;
 in {
   options = {
-    programs.mango = {
-      enable = lib.mkEnableOption "mango, a wayland compositor based on dwl";
+    programs.elderberry = {
+      enable = lib.mkEnableOption "Elderberry, a Wayland compositor forked from Mango";
       addLoginEntry = lib.mkOption {
         type = lib.types.bool;
         default = true;
-        description = "Whether to add a login entry to the display manager for mango. Only has effect if a display manager is configured (e.g. SDDM, GDM via `services.displayManager`).";
+        description = "Whether to add an Elderberry login entry to the display manager. Only has effect if a display manager is configured (e.g. SDDM, GDM via `services.displayManager`).";
       };
       package = lib.mkOption {
         type = lib.types.package;
-        default = self.packages.${pkgs.stdenv.hostPlatform.system}.mango;
-        description = "The mango package to use";
+        default = self.packages.${pkgs.stdenv.hostPlatform.system}.elderberry;
+        description = "The Elderberry package to use";
       };
     };
   };
@@ -32,7 +32,7 @@ in {
       enable = lib.mkDefault true;
 
       config = {
-        mango = {
+        elderberry = {
           default = [
             "gtk"
           ];

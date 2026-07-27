@@ -7,7 +7,7 @@ description: NixOS and Home Manager configuration options for mangowm.
 
 ## NixOS
 
-**System-level options via `programs.mango`.**
+**System-level options via `programs.elderberry`.**
 
 ### enable
 
@@ -89,7 +89,7 @@ true
 
 ## Home Manager
 
-**Configure mangowm declaratively via `wayland.windowManager.mango`.**
+**Configure Elderberry declaratively via `wayland.windowManager.elderberry`.**
 
 ### enable
 
@@ -146,7 +146,7 @@ package
 Shell script to run on mango startup\. No shebang needed\.
 
 When this option is set, the script will be written to
-` ~/.config/mango/autostart.sh ` and an ` exec-once ` line
+` ~/.config/elderberry/autostart.sh ` and an ` exec-once ` line
 will be automatically added to the config to execute it\.
 
 
@@ -217,7 +217,7 @@ list of string
 
 
 
-Extra configuration lines to add to ` ~/.config/mango/config.conf `\.
+Extra configuration lines to add to ` ~/.config/elderberry/config.conf `\.
 This is useful for advanced configurations that don’t fit the structured
 settings format, or for options that aren’t yet supported by the module\.
 
@@ -516,4 +516,3 @@ list of string
 
 *Declared by:*
  - [\<mango/nix/hm-modules\.nix>](https://github.com/mangowm/mango/blob/main/nix/hm-modules.nix)
-

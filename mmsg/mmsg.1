@@ -1,13 +1,13 @@
 .TH "mmsg" "1" "2026-05-31" "mmsg 0.14.0" "mmsg manual"
 .SH NAME
-mmsg \- send commands to the mango Wayland compositor and receive JSON responses
+mmsg \- send commands to the Elderberry Wayland compositor and receive JSON responses
 .SH SYNOPSIS
 \fBmmsg\fR <command> [\fIargs\fR...]
 .br
 \fBmmsg\fR \-\-help | \-h | help
 .SH DESCRIPTION
-\fBmmsg\fR connects to a running \fBmango\fR(1) compositor via the UNIX domain socket
-specified by the \fIMANGO_INSTANCE_SIGNATURE\fR environment variable. It sends
+\fBmmsg\fR connects to a running \fBelderberry\fR(1) compositor via the UNIX domain socket
+specified by the \fIELDERBERRY_INSTANCE_SIGNATURE\fR environment variable. It sends
 the given command and prints the JSON reply to standard output. In \fBwatch\fR
 mode it keeps the connection open and prints a stream of updates as they
 occur.
@@ -110,8 +110,8 @@ Stream keyboard layout changes.
 Stream last open surface changes for a specific monitor (or the focused one).
 .SH ENVIRONMENT
 .TP
-\fIMANGO_INSTANCE_SIGNATURE\fR
-Path to the compositor's IPC socket. Set automatically by \fBmango\fR(1).
+\fIELDERBERRY_INSTANCE_SIGNATURE\fR
+Path to the compositor's IPC socket. Set automatically by \fBelderberry\fR(1).
 If unset, \fBmmsg\fR prints an error and exits.
 .SH EXIT STATUS
 .TP
@@ -121,6 +121,6 @@ Success (or help message printed).
 \fBEXIT_FAILURE\fR
 An error occurred (connection refused, send/receive error, etc.).
 .SH SEE ALSO
-\fBmango\fR(1)
+\fBelderberry\fR(1)
 .SH BUGS
 Report issues at the project's issue tracker.

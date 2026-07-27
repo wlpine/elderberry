@@ -63,7 +63,7 @@ static void usage(void) {
 	printf("  watch last_open_surface [monitor]        Stream last open "
 		   "surface changes\n\n");
 	printf("Environment:\n");
-	printf("  MANGO_INSTANCE_SIGNATURE  IPC socket path (set by the "
+	printf("  ELDERBERRY_INSTANCE_SIGNATURE  IPC socket path (set by the "
 		   "compositor)\n\n");
 	printf("Run 'mmsg --help', '-h' or 'help' to see this message.\n");
 }
@@ -83,10 +83,10 @@ int main(int argc, char *argv[]) {
 		return EXIT_FAILURE;
 	}
 
-	const char *socket_path = getenv("MANGO_INSTANCE_SIGNATURE");
+	const char *socket_path = getenv("ELDERBERRY_INSTANCE_SIGNATURE");
 	if (!socket_path) {
-		fprintf(stderr, "Error: MANGO_INSTANCE_SIGNATURE is not set. Did you "
-						"run 'mmsg' in mango?\n");
+		fprintf(stderr, "Error: ELDERBERRY_INSTANCE_SIGNATURE is not set. Did "
+						"you run 'mmsg' in Elderberry?\n");
 		return EXIT_FAILURE;
 	}
 

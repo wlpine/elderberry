@@ -1,16 +1,15 @@
 <div align="center">
-  <img src="https://github.com/mangowm/mango/blob/main/assets/mango-transparency-256.png" alt="Mango Logo" width="120"/>
-
-  <h1>Mango Wayland Compositor</h1>
+  <h1>Elderberry Wayland Compositor</h1>
 
   <p>A fast, feature-rich Wayland compositor built on <a href="https://codeberg.org/dwl/dwl">dwl</a></p>
 
-<a href="https://github.com/mangowm/mango/stargazers"><img src="https://img.shields.io/github/stars/mangowm/mango?style=flat&color=orange" alt="Stars"/></a>
-<a href="https://github.com/mangowm/mango/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat" alt="License"/></a>
-<a href="https://repology.org/project/mangowm/versions"><img src="https://repology.org/badge/tiny-repos/mangowm.svg" alt="Packaged in"/></a>
-<a href="https://discord.gg/CPjbDxesh5"><img src="https://img.shields.io/discord/1430889676264177687?style=flat&logo=discord&label=discord" alt="Discord"/></a>
+<img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat" alt="License"/>
 
 </div>
+
+Elderberry is a fork of [Mango](https://github.com/mangowm/mango). It retains
+Mango's lightweight compositor foundation while developing and testing its own
+window-management and decoration behavior.
 
 ---
 
@@ -18,9 +17,10 @@ https://github.com/user-attachments/assets/bb83004a-0563-4b48-ad89-6461a9b78b1f
 
 > See all layouts in action at [mangowm.github.io](https://mangowm.github.io/)
 
-## Why Mango?
+## Why Elderberry?
 
-Mango starts where dwl ends. It keeps the lightweight, fast-build philosophy while adding the features that make a compositor actually usable day-to-day — without the bloat.
+Elderberry starts from Mango, which builds on dwl. It keeps the lightweight,
+fast-build philosophy while adding practical desktop features.
 
 - **Lightweight & fast** — as lean as dwl, builds in seconds, no functionality compromised
 - **Excellent xwayland support** — run X11 apps without friction
@@ -38,7 +38,8 @@ Mango starts where dwl ends. It keeps the lightweight, fast-build philosophy whi
 
 ## Vision
 
-**Stability first.** After months of testing, Mango is solid enough for daily use. Breaking changes will be minimal.
+**Testing first.** Elderberry currently prioritizes finding and fixing behavior
+that affects daily use.
 
 **Practicality over novelty.** Features get added when they genuinely improve daily workflows — not for the sake of completeness.
 
@@ -48,11 +49,17 @@ Mango starts where dwl ends. It keeps the lightweight, fast-build philosophy whi
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/mangowm.svg)](https://repology.org/project/mangowm/versions)
 
-### Arch Linux
+### Build From Source
 
 ```bash
-yay -S mangowm-git
+meson setup --wipe build
+meson compile -C build
+sudo meson install -C build
 ```
+
+`--wipe` recreates Meson's build metadata, which may otherwise retain the old
+Mango checkout path after renaming or moving the source directory.
+
 #### use my config
 - install dependencies
 ```
@@ -60,17 +67,17 @@ yay -S rofi foot xdg-desktop-portal-wlr swaybg waybar wl-clip-persist cliphist w
 ```
 - clone config
 ```
-git clone https://github.com/DreamMaoMao/mango-config.git ~/.config/mango
+git clone https://github.com/DreamMaoMao/mango-config.git ~/.config/elderberry
 ```
 
-### Other distributions
-
-See the [Installation Guide](https://mangowm.github.io/docs/installation) for Fedora, Gentoo, Guix, NixOS, openSUSE, PikaOS, AerynOS, and building from source.
+The upstream [Mango installation guide](https://mangowm.github.io/docs/installation)
+lists the dependencies needed on common distributions.
 
 ## Documentation
 
 - **[mangowm.github.io](https://mangowm.github.io/)** — website docs with configuration reference, keybindings, layouts, IPC, and more
 - **[GitHub Wiki](https://github.com/mangowm/mango/wiki/)** — community-maintained wiki
+- **[Frametail decorations](docs/frametail.md)** — optional Lua-configured server-side decorations
 
 ## Community
 
@@ -79,7 +86,8 @@ Join us on **[Discord](https://discord.gg/CPjbDxesh5)**
 ## Acknowledgements
 
 - [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots) — Wayland protocol implementation
-- [dwl](https://codeberg.org/dwl/dwl) — the foundation Mango builds on
+- [Mango](https://github.com/mangowm/mango) — Elderberry's upstream project
+- [dwl](https://codeberg.org/dwl/dwl) — Mango's foundation
 - [scenefx](https://github.com/wlrfx/scenefx) — window effects library
 - [owl](https://github.com/dqrk0jeste/owl) — animation groundwork
 - [sway](https://github.com/swaywm/sway) — protocol reference

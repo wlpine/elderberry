@@ -21,8 +21,8 @@ static inline struct ivec2 compute_edge_offsets(Client *c) {
 }
 
 void client_actual_size(Client *c, int32_t *width, int32_t *height) {
-	*width = c->animation.current.width - 2 * (int32_t)c->bw;
-	*height = c->animation.current.height - 2 * (int32_t)c->bw;
+	*width = c->animation.current.width - client_frame_width(c);
+	*height = c->animation.current.height - client_frame_height(c);
 }
 
 void set_rect_size(struct wlr_scene_rect *rect, int32_t width, int32_t height) {
@@ -183,11 +183,35 @@ void set_client_open_animation(Client *c, struct wlr_box geo) {
 	}
 }
 
-void snap_scene_buffer_apply_effect(struct wlr_scene_buffer *buffer, int32_t sx,
-									int32_t sy, void *data) {
-	BufferData *buffer_data = (BufferData *)data;
-	wlr_scene_buffer_set_dest_size(buffer, buffer_data->width,
-								   buffer_data->height);
+static void snapshot_scene_apply_scale(struct wlr_scene_node *node,
+		int32_t origin_x, int32_t origin_y, double scale_x, double scale_y) {
+	if (node->type == WLR_SCENE_NODE_TREE) {
+		SnapshotMetadata *meta = node->data;
+		if (meta != NULL && meta->type == Snapshot) {
+			wlr_scene_node_set_position(node,
+				origin_x + (int32_t)lround((meta->orig_x - origin_x) * scale_x),
+				origin_y + (int32_t)lround((meta->orig_y - origin_y) * scale_y));
+		}
+		struct wlr_scene_tree *tree = wlr_scene_tree_from_node(node);
+		struct wlr_scene_node *child;
+		wl_list_for_each(child, &tree->children, link)
+			snapshot_scene_apply_scale(child, origin_x, origin_y, scale_x, scale_y);
+		return;
+	}
+
+	SnapshotMetadata *meta = node->parent != NULL ? node->parent->node.data : NULL;
+	if (meta == NULL || meta->type != Snapshot)
+		return;
+	int32_t width = GEZERO((int32_t)lround(meta->orig_width * scale_x));
+	int32_t height = GEZERO((int32_t)lround(meta->orig_height * scale_y));
+	if (node->type == WLR_SCENE_NODE_BUFFER) {
+		wlr_scene_buffer_set_dest_size(wlr_scene_buffer_from_node(node), width,
+			height);
+	} else if (node->type == WLR_SCENE_NODE_RECT) {
+		wlr_scene_rect_set_size(wlr_scene_rect_from_node(node), width, height);
+	} else if (node->type == WLR_SCENE_NODE_SHADOW) {
+		wlr_scene_shadow_set_size(wlr_scene_shadow_from_node(node), width, height);
+	}
 }
 
 void scene_buffer_apply_effect(struct wlr_scene_buffer *buffer, int32_t sx,
@@ -311,6 +335,12 @@ void buffer_set_effect(Client *c, BufferData data) {
 }
 
 void client_draw_shadow(Client *c, struct ivec2 offsets) {
+#ifdef HAVE_FRAMETAIL
+	if (c->frametail_decoration) {
+		wlr_scene_node_set_enabled(&c->shadow->node, false);
+		return;
+	}
+#endif
 	if (c->iskilling || !client_surface(c)->mapped || c->isnoshadow)
 		return;
 
@@ -402,6 +432,13 @@ void client_draw_shadow(Client *c, struct ivec2 offsets) {
 }
 
 void client_draw_groupbar(Client *c, struct ivec2 offsets) {
+#ifdef HAVE_FRAMETAIL
+	if (c->frametail_decoration) {
+		if (c->group_bar && c->group_bar->scene_buffer->node.enabled)
+			wlr_scene_node_set_enabled(&c->group_bar->scene_buffer->node, false);
+		return;
+	}
+#endif
 	if (!c || !c->group_bar)
 		return;
 
@@ -478,11 +515,11 @@ void client_draw_groupbar(Client *c, struct ivec2 offsets) {
 }
 
 void client_draw_shield(Client *c, struct ivec2 clip_box) {
-
 	int32_t shield_x = 0;
 	int32_t shield_y = 0;
 	int32_t shield_width = 0;
 	int32_t shield_height = 0;
+	struct mango_frame_extents extents = client_frame_extents(c);
 
 	if (active_capture_count <= 0 || !c->shield_when_capture) {
 		if (c->shield->node.enabled) {
@@ -496,16 +533,16 @@ void client_draw_shield(Client *c, struct ivec2 clip_box) {
 	}
 
 	if (client_is_ignore_output_clip(c)) {
-		shield_x = c->bw;
-		shield_y = c->bw;
-		shield_width = c->animation.current.width - 2 * (int32_t)c->bw;
-		shield_height = c->animation.current.height - 2 * (int32_t)c->bw;
+		shield_x = extents.left;
+		shield_y = extents.top;
+		shield_width = c->animation.current.width - extents.left - extents.right;
+		shield_height = c->animation.current.height - extents.top - extents.bottom;
 	} else {
-		shield_x = clip_box.x + (int32_t)c->bw;
-		shield_y = clip_box.y + (int32_t)c->bw;
-		shield_width = c->animation.current.width - 2 * (int32_t)c->bw -
+		shield_x = clip_box.x + extents.left;
+		shield_y = clip_box.y + extents.top;
+		shield_width = c->animation.current.width - extents.left - extents.right -
 					   clip_box.width - clip_box.x;
-		shield_height = c->animation.current.height - 2 * (int32_t)c->bw -
+		shield_height = c->animation.current.height - extents.top - extents.bottom -
 						clip_box.height - clip_box.y;
 	}
 
@@ -521,6 +558,12 @@ void client_draw_shield(Client *c, struct ivec2 clip_box) {
 }
 
 void client_draw_blur(Client *c, struct ivec2 clip_box) {
+#ifdef HAVE_FRAMETAIL
+	if (c->frametail_decoration) {
+		wlr_scene_node_set_enabled(&c->blur->node, false);
+		return;
+	}
+#endif
 	if (c->isfullscreen) {
 		if (c->blur->node.enabled)
 			wlr_scene_node_set_enabled(&c->blur->node, false);
@@ -635,6 +678,15 @@ void client_draw_split_border(Client *c, bool hit_no_border,
 void client_draw_border(Client *c, struct ivec2 offsets) {
 	if (!c || c->iskilling || !client_surface(c)->mapped)
 		return;
+#ifdef HAVE_FRAMETAIL
+	if (c->frametail_decoration) {
+		mango_frametail_sync_geometry(c, c->animation.current);
+		wlr_scene_node_set_enabled(&c->border->node, false);
+		wlr_scene_node_set_enabled(&c->shadow->node, false);
+		wlr_scene_node_set_enabled(&c->blur->node, false);
+		return;
+	}
+#endif
 
 	if (c->isfullscreen) {
 		if (c->border->node.enabled) {
@@ -717,29 +769,29 @@ struct ivec2 clip_to_hide(Client *c, struct wlr_box *clip_box,
 		!c->animation.tagouting)
 		return offset;
 
-	int32_t bw = (int32_t)c->bw;
+	struct mango_frame_extents extents = client_frame_extents(c);
 	int32_t left = offsets.x, right = offsets.width, top = offsets.y,
 			bottom = offsets.height;
 
 	if (left > 0) {
-		offset.x = GEZERO(left - bw);
+		offset.x = GEZERO(left - extents.left);
 		clip_box->x += offset.x;
 		clip_box->width -= offset.x;
 	} else if (right > 0) {
-		offset.width = GEZERO(right - bw);
+		offset.width = GEZERO(right - extents.right);
 		clip_box->width -= offset.width;
 	}
 
 	if (top > 0) {
-		offset.y = GEZERO(top - bw);
+		offset.y = GEZERO(top - extents.top);
 		clip_box->y += offset.y;
 		clip_box->height -= offset.y;
 	} else if (bottom > 0) {
-		offset.height = GEZERO(bottom - bw);
+		offset.height = GEZERO(bottom - extents.bottom);
 		clip_box->height -= offset.height;
 	}
 
-	if ((clip_box->width + bw <= 0 || clip_box->height + bw <= 0) &&
+	if ((clip_box->width <= 0 || clip_box->height <= 0) &&
 		(ISSCROLLTILED(c) || c->animation.tagouting || c->animation.tagining)) {
 		c->is_clip_to_hide = true;
 		wlr_scene_node_set_enabled(&c->scene->node, false);
@@ -1102,13 +1154,12 @@ void fadeout_client_animation_next_tick(Client *c) {
 		 strcmp(c->animation_type_close, "zoom") == 0) ||
 		(!c->animation_type_close &&
 		 strcmp(config.animation_type_close, "zoom") == 0)) {
-		BufferData buffer_data;
-		buffer_data.width = width;
-		buffer_data.height = height;
-		buffer_data.width_scale = animation_passed;
-		buffer_data.height_scale = animation_passed;
-		wlr_scene_node_for_each_buffer(
-			&c->scene->node, snap_scene_buffer_apply_effect, &buffer_data);
+		double scale_x = c->animation.initial.width > 0 ?
+			(double)width / c->animation.initial.width : 1.0;
+		double scale_y = c->animation.initial.height > 0 ?
+			(double)height / c->animation.initial.height : 1.0;
+		snapshot_scene_apply_scale(&c->scene->node, c->geom.x, c->geom.y,
+			scale_x, scale_y);
 	}
 
 	if (animation_passed >= 1.0) {
@@ -1333,8 +1384,8 @@ void resize(Client *c, struct wlr_box geo, int32_t interact) {
 
 	if (is_scroller_layout(c->mon) && (!c->isfloating || c == grabc)) {
 		c->geom = geo;
-		c->geom.width = MANGO_MAX(1 + 2 * (int32_t)c->bw, c->geom.width);
-		c->geom.height = MANGO_MAX(1 + 2 * (int32_t)c->bw, c->geom.height);
+		c->geom.width = MANGO_MAX(1 + client_frame_width(c), c->geom.width);
+		c->geom.height = MANGO_MAX(1 + client_frame_height(c), c->geom.height);
 	} else {
 		c->geom = geo;
 		applybounds(c, bbox);
@@ -1386,8 +1437,9 @@ void resize(Client *c, struct wlr_box geo, int32_t interact) {
 	}
 
 	if (!c->mon->isoverview || !config.ov_no_resize)
-		c->configure_serial = client_set_size(c, c->geom.width - 2 * c->bw,
-											  c->geom.height - 2 * c->bw);
+		c->configure_serial = client_set_size(
+			c, c->geom.width - client_frame_width(c),
+			c->geom.height - client_frame_height(c));
 
 	if (c->configure_serial != 0)
 		c->mon->resizing_count_pending++;

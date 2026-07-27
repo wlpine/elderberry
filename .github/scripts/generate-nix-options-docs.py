@@ -14,8 +14,8 @@ HEADER = (
 )
 
 SECTIONS = [
-    ("NixOS", "**System-level options via `programs.mango`.**"),
-    ("Home Manager", "**Configure mangowm declaratively via `wayland.windowManager.mango`.**"),
+    ("NixOS", "**System-level options via `programs.elderberry`.**"),
+    ("Home Manager", "**Configure Elderberry declaratively via `wayland.windowManager.elderberry`.**"),
 ]
 
 

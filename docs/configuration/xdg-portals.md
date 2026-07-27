@@ -7,8 +7,8 @@ description: Set up screen sharing, clipboard, keyring, and file pickers using X
 
 You can customize portal settings via the following paths:
 
-- **User Configuration (Priority):** `~/.config/xdg-desktop-portal/mango-portals.conf`
-- **System Fallback:** `/usr/share/xdg-desktop-portal/mango-portals.conf`
+- **User Configuration (Priority):** `~/.config/xdg-desktop-portal/elderberry-portals.conf`
+- **System Fallback:** `/usr/share/xdg-desktop-portal/elderberry-portals.conf`
 
 > **Warning:** If you previously added `dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP=wlroots` to your config, remove it. Mango now handles this automatically.
 
@@ -58,7 +58,7 @@ If you need to store passwords or secrets (e.g., for VS Code or Minecraft launch
 
 **Configuration:**
 
-Add the following to `~/.config/xdg-desktop-portal/mango-portals.conf`:
+Add the following to `~/.config/xdg-desktop-portal/elderberry-portals.conf`:
 
 ```ini
 [preferred]

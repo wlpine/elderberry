@@ -1,4 +1,4 @@
-project('mango', ['c'],
+project('elderberry', ['c'],
   version : '0.15.4',
 )
 
@@ -39,6 +39,7 @@ libscenefx_dep = dependency('scenefx-0.5',version: '>=0.5.0')
 pixman_dep = dependency('pixman-1')
 cjson_dep = dependency('libcjson')
 pangocairo_dep = dependency('pangocairo')
+frametail_dep = dependency('frametail-lua', required : get_option('frametail'))
 
 # version info
 git = find_program('git', required : false)
@@ -71,6 +72,7 @@ c_args = [
   '-DWLR_USE_UNSTABLE',
   '-D_POSIX_C_SOURCE=200809L',
   '-DVERSION="@0@"'.format(version_with_hash),
+  '-DPROGRAM_NAME="@0@"'.format(get_option('compositor_name')),
   '-DSYSCONFDIR="@0@"'.format('/etc'),
 ]
 
@@ -86,6 +88,9 @@ endif
 if xcb.found() and xlibs.found()
   c_args += '-DXWAYLAND'
 endif
+if frametail_dep.found()
+  c_args += '-DHAVE_FRAMETAIL'
+endif
 
 # define link args
 link_args = []
@@ -93,7 +98,7 @@ if get_option('asan')
   link_args += '-fsanitize=address'
 endif
 
-executable('mango',
+executable(get_option('compositor_name'),
   'src/mango.c',
   'src/common/util.c',
   'src/draw/text-node.c',
@@ -114,8 +119,11 @@ executable('mango',
     pixman_dep,
     cjson_dep,
     pangocairo_dep,
+    frametail_dep,
   ],
   install : true,
+  install_tag : 'compositor',
+  install_rpath : '$ORIGIN/../' + get_option('libdir'),
   c_args : c_args,
   link_args : link_args,
 )
@@ -150,7 +158,10 @@ executable('mmsg',
 mandir = get_option('mandir')
 desktop_install_dir = join_paths(prefix, 'share/wayland-sessions')
 portal_install_dir = join_paths(prefix, 'share/xdg-desktop-portal')
-install_data('assets/mango.desktop', install_dir : desktop_install_dir)
-install_data('assets/mango-portals.conf', install_dir : portal_install_dir)
-install_data('assets/config.conf', install_dir : join_paths(sysconfdir, 'mango'))
+install_data('assets/elderberry.desktop', install_dir : desktop_install_dir)
+install_data('assets/elderberry-portals.conf', install_dir : portal_install_dir)
+install_data('assets/config.conf', install_dir : join_paths(sysconfdir, get_option('compositor_name')))
+if frametail_dep.found()
+  install_data('assets/frametail-theme.lua', install_dir : join_paths(sysconfdir, get_option('compositor_name')))
+endif
 install_data('mmsg/mmsg.1', install_dir : join_paths(mandir, 'man1'))

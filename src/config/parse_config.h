@@ -342,6 +342,8 @@ typedef struct {
 	uint32_t gappoh;
 	uint32_t gappov;
 	uint32_t borderpx;
+	int32_t frametail;
+	char *frametail_theme;
 	uint32_t group_bar_height;
 	float scratchpad_width_ratio;
 	float scratchpad_height_ratio;
@@ -1996,6 +1998,11 @@ bool parse_option(Config *config, char *key, char *value) {
 		config->scratchpad_height_ratio = atof(value);
 	} else if (strcmp(key, "borderpx") == 0) {
 		config->borderpx = atoi(value);
+	} else if (strcmp(key, "frametail") == 0) {
+		config->frametail = atoi(value);
+	} else if (strcmp(key, "frametail_theme") == 0) {
+		free(config->frametail_theme);
+		config->frametail_theme = strdup(value);
 	} else if (strcmp(key, "group_bar_height") == 0) {
 		config->group_bar_height = atoi(value);
 	} else if (strcmp(key, "rootcolor") == 0) {
@@ -3113,8 +3120,8 @@ bool parse_config_file(Config *config, const char *file_path, bool must_exist) {
 						"variable not set.\n");
 				return false;
 			}
-			snprintf(full_path, sizeof(full_path), "%s/.config/mango/%s", home,
-					 file_path + 1);
+			snprintf(full_path, sizeof(full_path), "%s/.config/%s/%s", home,
+					 PROGRAM_NAME, file_path + 1);
 		}
 		file = fopen(full_path, "r");
 
@@ -3455,6 +3462,8 @@ void free_config(void) {
 		free(config.cursor_theme);
 		config.cursor_theme = NULL;
 	}
+	free(config.frametail_theme);
+	config.frametail_theme = NULL;
 
 	if (config.jumplabeldata.font_desc) {
 		free((void *)config.jumplabeldata.font_desc);
@@ -3765,6 +3774,8 @@ void set_value_default() {
 	config.idleinhibit_ignore_visible = 0;
 
 	config.borderpx = 4;
+	config.frametail = 0;
+	config.frametail_theme = NULL;
 	config.group_bar_height = 50;
 	config.overviewgappi = 5;
 	config.overviewgappo = 30;
@@ -4014,6 +4025,7 @@ bool parse_config(void) {
 	config.tag_rules = NULL;
 	config.tag_rules_count = 0;
 	config.cursor_theme = NULL;
+	config.frametail_theme = NULL;
 	config.jumplabeldata.font_desc = NULL;
 	config.groupbardata.font_desc = NULL;
 	config.tablet_map_to_mon = NULL;
@@ -4031,14 +4043,14 @@ bool parse_config(void) {
 			return false;
 		}
 		// 构建日志文件路径
-		snprintf(filename, sizeof(filename), "%s/.config/mango/config.conf",
-				 homedir);
+		snprintf(filename, sizeof(filename), "%s/.config/%s/config.conf",
+				 homedir, PROGRAM_NAME);
 
 		// 检查文件是否存在
 		if (access(filename, F_OK) != 0) {
-			// 如果文件不存在，则使用 /etc/mango/config.conf
-			snprintf(filename, sizeof(filename), "%s/mango/config.conf",
-					 SYSCONFDIR);
+			// 如果文件不存在，则使用系统配置文件
+			snprintf(filename, sizeof(filename), "%s/%s/config.conf",
+					 SYSCONFDIR, PROGRAM_NAME);
 		}
 	}
 
@@ -4187,7 +4199,11 @@ void reapply_property(void) {
 	// reset border width when config change
 	wl_list_for_each(c, &clients, link) {
 		if (c && !c->iskilling) {
-			if (!c->isnoborder && !c->isfullscreen) {
+			if (!c->isnoborder && !c->isfullscreen
+#ifdef HAVE_FRAMETAIL
+				&& !c->frametail_decoration
+#endif
+			) {
 				c->bw = config.borderpx;
 			}
 			client_set_group_config(c);
@@ -4366,6 +4382,9 @@ void reset_option(void) {
 
 int32_t reload_config(const Arg *arg) {
 	parse_config();
+#ifdef HAVE_FRAMETAIL
+	mango_frametail_reload();
+#endif
 	reset_option();
 	printstatus(IPC_WATCH_ARRANGGE);
 	return 1;

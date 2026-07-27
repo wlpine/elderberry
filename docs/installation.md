@@ -82,31 +82,19 @@ The package is hosted in the community-maintained **GURU** repository.
 
 The package definition is described in the source repository.
 
-1. **Add mango channel**
-   Add to `$HOME/.config/guix/channels.scm`:
+1. **Build the local package definition**
 
-   ```scheme
-   (cons (channel
-           (name 'mangowm)
-           (url "https://github.com/mangowm/mango.git")
-           (branch "main"))
-         %default-channels)
+   ```sh
+   guix build -f elderberry.scm
    ```
 
-2. **Install**
-   After running `guix pull`, you can install mangowm:
-
-   ```bash
-   guix install mangowm
-   ```
-
-   Or add it to your system configuration using the mangowm module:
+2. **Use it from a Guix configuration**
 
    ```scheme
-   (use-modules (mangowm))
+   (use-modules (elderberry))
 
    (packages (cons*
-               mangowm-git
+               elderberry-git
                ... ;; Other packages
                %base-packages))
    ```
@@ -177,7 +165,7 @@ The repository provides a Flake with a NixOS module.
    ```nix
    # configuration.nix (or any other file that you import)
    {
-     programs.mango.enable = true;
+     programs.elderberry.enable = true;
    }
    ```
 

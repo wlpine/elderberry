@@ -88,6 +88,44 @@ end:
 }
 
 /* The others */
+struct mango_frame_extents {
+	int32_t top, right, bottom, left;
+};
+
+static inline struct mango_frame_extents client_frame_extents(Client *c) {
+#ifdef HAVE_FRAMETAIL
+	if (c->frametail_decoration) {
+		if (c->isfullscreen)
+			return (struct mango_frame_extents){0};
+		return (struct mango_frame_extents){
+			c->frametail_extents.top, c->frametail_extents.right,
+			c->frametail_extents.bottom, c->frametail_extents.left};
+	}
+#endif
+	return (struct mango_frame_extents){c->bw, c->bw, c->bw, c->bw};
+}
+
+static inline int32_t client_frame_width(Client *c) {
+	struct mango_frame_extents extents = client_frame_extents(c);
+	return extents.left + extents.right;
+}
+
+static inline int32_t client_frame_height(Client *c) {
+	struct mango_frame_extents extents = client_frame_extents(c);
+	return extents.top + extents.bottom;
+}
+
+static inline struct wlr_box client_content_box(Client *c,
+		struct wlr_box frame) {
+	struct mango_frame_extents extents = client_frame_extents(c);
+	return (struct wlr_box){
+		.x = frame.x + extents.left,
+		.y = frame.y + extents.top,
+		.width = GEZERO(frame.width - extents.left - extents.right),
+		.height = GEZERO(frame.height - extents.top - extents.bottom),
+	};
+}
+
 static inline void client_activate_surface(struct wlr_surface *s,
 										   int32_t activated) {
 	struct wlr_xdg_toplevel *toplevel;
@@ -128,8 +166,8 @@ static inline void client_get_clip(Client *c, struct wlr_box *clip) {
 	*clip = (struct wlr_box){
 		.x = 0,
 		.y = 0,
-		.width = c->geom.width - 2 * c->bw,
-		.height = c->geom.height - 2 * c->bw,
+		.width = c->geom.width - client_frame_width(c),
+		.height = c->geom.height - client_frame_height(c),
 	};
 
 #ifdef XWAYLAND
@@ -296,31 +334,26 @@ static inline uint32_t client_set_size(Client *c, uint32_t width,
 	if (client_is_x11(c)) {
 		struct wlr_xwayland_surface *surface = c->surface.xwayland;
 		struct wlr_surface_state *state = &surface->surface->current;
+		struct wlr_box content = client_content_box(c, c->geom);
 
-		if ((int32_t)c->geom.width - 2 * (int32_t)c->bw ==
-				(int32_t)state->width &&
-			(int32_t)c->geom.height - 2 * (int32_t)c->bw ==
-				(int32_t)state->height &&
-			(int32_t)c->surface.xwayland->x ==
-				(int32_t)c->geom.x + (int32_t)c->bw &&
-			(int32_t)c->surface.xwayland->y ==
-				(int32_t)c->geom.y + (int32_t)c->bw) {
+		if (content.width == (int32_t)state->width &&
+			content.height == (int32_t)state->height &&
+			c->surface.xwayland->x == content.x &&
+			c->surface.xwayland->y == content.y) {
 			return 0;
 		}
 
 		xcb_size_hints_t *size_hints = surface->size_hints;
-		int32_t width = c->geom.width - 2 * c->bw;
-		int32_t height = c->geom.height - 2 * c->bw;
+		int32_t width = content.width;
+		int32_t height = content.height;
 
-		if (size_hints &&
-			c->geom.width - 2 * (int32_t)c->bw < size_hints->min_width)
+		if (size_hints && width < size_hints->min_width)
 			width = size_hints->min_width;
-		if (size_hints &&
-			c->geom.height - 2 * (int32_t)c->bw < size_hints->min_height)
+		if (size_hints && height < size_hints->min_height)
 			height = size_hints->min_height;
 
-		wlr_xwayland_surface_configure(c->surface.xwayland, c->geom.x + c->bw,
-									   c->geom.y + c->bw, width, height);
+		wlr_xwayland_surface_configure(c->surface.xwayland, content.x,
+									   content.y, width, height);
 		return 1;
 	}
 #endif
@@ -495,6 +528,10 @@ static inline bool client_request_maximize(Client *c, void *data) {
 static inline void client_set_size_bound(Client *c) {
 	struct wlr_xdg_toplevel *toplevel;
 	struct wlr_xdg_toplevel_state state;
+	int32_t frame_width = client_frame_width(c);
+	int32_t frame_height = client_frame_height(c);
+	int32_t content_width = c->geom.width - frame_width;
+	int32_t content_height = c->geom.height - frame_height;
 
 #ifdef XWAYLAND
 	if (client_is_x11(c)) {
@@ -504,38 +541,38 @@ static inline void client_set_size_bound(Client *c) {
 		if (!size_hints)
 			return;
 
-		if ((uint32_t)c->geom.width - 2 * c->bw < size_hints->min_width &&
+		if (content_width < (int32_t)size_hints->min_width &&
 			size_hints->min_width > 0)
-			c->geom.width = size_hints->min_width + 2 * c->bw;
-		if ((uint32_t)c->geom.height - 2 * c->bw < size_hints->min_height &&
+			c->geom.width = (int32_t)size_hints->min_width + frame_width;
+		if (content_height < (int32_t)size_hints->min_height &&
 			size_hints->min_height > 0)
-			c->geom.height = size_hints->min_height + 2 * c->bw;
-		if ((uint32_t)c->geom.width - 2 * c->bw > size_hints->max_width &&
+			c->geom.height = (int32_t)size_hints->min_height + frame_height;
+		if (content_width > (int32_t)size_hints->max_width &&
 			size_hints->max_width > 0)
-			c->geom.width = size_hints->max_width + 2 * c->bw;
-		if ((uint32_t)c->geom.height - 2 * c->bw > size_hints->max_height &&
+			c->geom.width = (int32_t)size_hints->max_width + frame_width;
+		if (content_height > (int32_t)size_hints->max_height &&
 			size_hints->max_height > 0)
-			c->geom.height = size_hints->max_height + 2 * c->bw;
+			c->geom.height = (int32_t)size_hints->max_height + frame_height;
 		return;
 	}
 #endif
 
 	toplevel = c->surface.xdg->toplevel;
 	state = toplevel->current;
-	if ((uint32_t)c->geom.width - 2 * c->bw < state.min_width &&
+	if (content_width < state.min_width &&
 		state.min_width > 0) {
-		c->geom.width = state.min_width + 2 * c->bw;
+		c->geom.width = state.min_width + frame_width;
 	}
-	if ((uint32_t)c->geom.height - 2 * c->bw < state.min_height &&
+	if (content_height < state.min_height &&
 		state.min_height > 0) {
-		c->geom.height = state.min_height + 2 * c->bw;
+		c->geom.height = state.min_height + frame_height;
 	}
-	if ((uint32_t)c->geom.width - 2 * c->bw > state.max_width &&
+	if (content_width > state.max_width &&
 		state.max_width > 0) {
-		c->geom.width = state.max_width + 2 * c->bw;
+		c->geom.width = state.max_width + frame_width;
 	}
-	if ((uint32_t)c->geom.height - 2 * c->bw > state.max_height &&
+	if (content_height > state.max_height &&
 		state.max_height > 0) {
-		c->geom.height = state.max_height + 2 * c->bw;
+		c->geom.height = state.max_height + frame_height;
 	}
 }

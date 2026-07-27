@@ -486,6 +486,7 @@ int32_t moveresize(const Arg *arg) {
 	if (!grabc || client_is_unmanaged(grabc) || grabc->isfullscreen ||
 		grabc->ismaximizescreen) {
 		grabc = NULL;
+		resize_corner_override = -1;
 		return 0;
 	}
 	if (grabc->isfloating == 0 && arg->ui == CurMove) {
@@ -515,7 +516,9 @@ int32_t moveresize(const Arg *arg) {
 		break;
 	case CurResize:
 		if (grabc->isfloating) {
-			rzcorner = config.drag_corner;
+			rzcorner = resize_corner_override >= 0 ?
+				resize_corner_override : config.drag_corner;
+			resize_corner_override = -1;
 			grabcx = (int)round(cursor->x);
 			grabcy = (int)round(cursor->y);
 			if (rzcorner == 4)
@@ -538,6 +541,7 @@ int32_t moveresize(const Arg *arg) {
 
 			wlr_cursor_set_xcursor(cursor, cursor_mgr, cursors[rzcorner]);
 		} else {
+			resize_corner_override = -1;
 			wlr_cursor_set_xcursor(cursor, cursor_mgr, "grab");
 		}
 		break;

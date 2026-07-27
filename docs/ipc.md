@@ -1,22 +1,22 @@
 ---
 title: IPC
-description: Control mangowm programmatically using mmsg.
+description: Control Elderberry programmatically using mmsg.
 ---
 
 # mmsg(1) - User Manual
 
-`mmsg` is the command-line interface for the Mango compositor's Inter-Process Communication (IPC) system. It allows users and scripts to query the state of the compositor or subscribe to real-time events.
+`mmsg` is the command-line interface for Elderberry's Inter-Process Communication (IPC) system. It allows users and scripts to query the state of the compositor or subscribe to real-time events.
 
 ## SYNOPSIS
 `mmsg <command> [arguments...]`
 
 ## DESCRIPTION
-`mmsg` acts as a client that connects to the Mango compositor via a Unix domain socket defined by the `MANGO_INSTANCE_SIGNATURE` environment variable. It supports two primary modes of operation:
+`mmsg` acts as a client that connects to Elderberry via a Unix domain socket defined by the `ELDERBERRY_INSTANCE_SIGNATURE` environment variable. It supports two primary modes of operation:
 1. **One-shot Request (`get`)**: Sends a query to the compositor, receives a single JSON response, and terminates.
 2. **Persistent Stream (`watch`)**: Subscribes to a specific state, receiving continuous JSON updates whenever that state changes.
 
 ## ENVIRONMENT VARIABLES
-* **`MANGO_INSTANCE_SIGNATURE`**: Must be set to the path of the Unix socket created by the running Mango instance. This is typically handled automatically when running `mmsg` from within a terminal spawned by the compositor.
+* **`ELDERBERRY_INSTANCE_SIGNATURE`**: Must be set to the path of the Unix socket created by the running Elderberry instance. This is typically handled automatically when running `mmsg` from within a terminal spawned by the compositor.
 
 ## COMMANDS
 

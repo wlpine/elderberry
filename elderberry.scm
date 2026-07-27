@@ -1,4 +1,4 @@
-(define-module (mangowm)
+(define-module (elderberry)
   #:use-module (guix download)
   #:use-module (guix git-download)
   #:use-module (guix gexp)
@@ -20,11 +20,11 @@
   #:use-module ((guix licenses) #:prefix license:))
 
 
-(define-public mangowm-git
+(define-public elderberry-git
   (package
-    (name "mangowm")
+    (name "elderberry")
     (version "git")
-    (source (local-file "." "mangowm-checkout"
+    (source (local-file "." "elderberry-checkout"
                         #:recursive? #t
                         #:select? (or (git-predicate (current-source-directory))
                                       (const #t))))
@@ -38,7 +38,7 @@
           (add-before 'configure 'patch-meson
             (lambda _
               (substitute* "meson.build"
-                ;; MangoWM ignores sysconfdir handling for NixOS.
+                 ;; The upstream sysconfdir handling treats NixOS specially.
                 ;; We also need to skip that sysconfdir edits.
                 (("is_nixos = false")
                  "is_nixos = true")
@@ -66,9 +66,9 @@
     (home-page "https://github.com/mangowm/mango")
     (synopsis "Wayland compositor based on wlroots and scenefx")
     (description
-     "MangoWM is a modern, lightweight, high-performance Wayland compositor
-built on dwl — crafted for speed, flexibility, and a customizable desktop experience.")
-    (license (list license:gpl3 ;mangowm itself, dwl
+     "Elderberry is a Wayland compositor forked from Mango and built on dwl,
+wlroots, and SceneFX.")
+    (license (list license:gpl3 ;Elderberry, Mango, dwl
                    license:expat ;dwm, sway, wlroots
                    license:cc0)))) ;tinywl
 
@@ -89,7 +89,4 @@ built on dwl — crafted for speed, flexibility, and a customizable desktop expe
     (inputs (modify-inputs (package-inputs scenefx)
               (replace "wlroots" wlroots-0.20)))))
 
-(define-deprecated-package mangowc
-  mangowm-git)
-
-mangowm-git
+elderberry-git

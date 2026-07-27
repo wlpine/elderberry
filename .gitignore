@@ -2,7 +2,7 @@
 /.vscode
 /result
 config.h
-mango
+elderberry
 mango.o
 util.o
 *-protocol.h

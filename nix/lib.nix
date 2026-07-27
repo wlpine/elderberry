@@ -52,13 +52,13 @@ let
     # Type
 
     ```
-    toMango :: AttrSet -> AttrSet -> String
+    toElderberry :: AttrSet -> AttrSet -> String
     ```
 
     # Examples
     :::{.example}
 
-    ## Basic mangowc configuration
+    ## Basic Elderberry configuration
 
     ```nix
     let
@@ -69,7 +69,7 @@ let
         animations = 1;
         animation_duration_open = 400;
       };
-    in lib.toMango {} config
+    in lib.toElderberry {} config
     ```
 
     **Output:**
@@ -97,7 +97,7 @@ let
           close = "0.08,0.92,0,1";
         };
       };
-    in lib.toMango {} config
+    in lib.toElderberry {} config
     ```
 
     **Output:**
@@ -125,7 +125,7 @@ let
           "id:2,layout_name:scroller"
         ];
       };
-    in lib.toMango {} config
+    in lib.toElderberry {} config
     ```
 
     **Output:**
@@ -156,7 +156,7 @@ let
           };
         };
       };
-    in lib.toMango {} config
+    in lib.toElderberry {} config
     ```
 
     **Output:**
@@ -172,14 +172,14 @@ let
 
     :::
   */
-  toMango =
+  toElderberry =
     {
       topCommandsPrefixes ? [ ],
       bottomCommandsPrefixes ? [ ],
     }:
     attrs:
     let
-      toMango' =
+      toElderberry' =
         attrs:
         let
           # Specially configured `toKeyValue` generator with support for duplicate keys
@@ -235,7 +235,7 @@ let
         ]
         + keymodeBlocks;
     in
-    toMango' attrs;
+    toElderberry' attrs;
 
   /**
     Flatten a nested attribute set into a flat attribute set, using a custom key separator function.
@@ -308,5 +308,5 @@ let
     flattenAttrs' "" attrs;
 in
 {
-  inherit flattenAttrs toMango;
+  inherit flattenAttrs toElderberry;
 }

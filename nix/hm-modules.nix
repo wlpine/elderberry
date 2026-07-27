@@ -6,7 +6,7 @@ self:
   ...
 }:
 let
-  cfg = config.wayland.windowManager.mango;
+  cfg = config.wayland.windowManager.elderberry;
   selflib = import ./lib.nix lib;
   variables = lib.concatStringsSep " " cfg.systemd.variables;
   extraCommands = lib.concatStringsSep " && " cfg.systemd.extraCommands;
@@ -18,16 +18,16 @@ let
 in
 {
   options = {
-    wayland.windowManager.mango = with lib; {
+    wayland.windowManager.elderberry = with lib; {
       enable = mkOption {
         type = types.bool;
         default = false;
-        description = "Whether to enable mangowm, a Wayland compositor based on dwl.";
+        description = "Whether to enable Elderberry, a Wayland compositor forked from Mango.";
       };
       package = lib.mkOption {
         type = lib.types.package;
-        default = self.packages.${pkgs.stdenv.hostPlatform.system}.mango;
-        description = "The mango package to use";
+        default = self.packages.${pkgs.stdenv.hostPlatform.system}.elderberry;
+        description = "The Elderberry package to use";
       };
       systemd = {
         enable = mkOption {
@@ -35,8 +35,8 @@ in
           default = pkgs.stdenv.isLinux;
           example = false;
           description = ''
-            Whether to enable {file}`mango-session.target` on
-            mango startup. This links to
+            Whether to enable {file}`elderberry-session.target` on
+            Elderberry startup. This links to
             {file}`graphical-session.target`.
             Some important environment variables will be imported to systemd
             and dbus user environment before reaching the target, including
@@ -68,7 +68,7 @@ in
           type = types.listOf types.str;
           default = [
             "systemctl --user reset-failed"
-            "systemctl --user start mango-session.target"
+            "systemctl --user start elderberry-session.target"
           ];
           description = ''
             Extra commands to run after D-Bus activation.
@@ -167,7 +167,7 @@ in
         type = types.lines;
         default = "";
         description = ''
-          Extra configuration lines to add to `~/.config/mango/config.conf`.
+          Extra configuration lines to add to `~/.config/elderberry/config.conf`.
           This is useful for advanced configurations that don't fit the structured
           settings format, or for options that aren't yet supported by the module.
         '';
@@ -196,10 +196,10 @@ in
       };
       autostart_sh = mkOption {
         description = ''
-          Shell script to run on mango startup. No shebang needed.
+          Shell script to run on Elderberry startup. No shebang needed.
 
           When this option is set, the script will be written to
-          `~/.config/mango/autostart.sh` and an `exec-once` line
+          `~/.config/elderberry/autostart.sh` and an `exec-once` line
           will be automatically added to the config to execute it.
         '';
         type = types.lines;
@@ -221,24 +221,24 @@ in
             cfg.settings
           else
             lib.optionalString (cfg.settings != { }) (
-              selflib.toMango {
+              selflib.toElderberry {
                 topCommandsPrefixes = cfg.topPrefixes;
                 bottomCommandsPrefixes = cfg.bottomPrefixes;
               } cfg.settings
             )
         )
         + lib.optionalString (cfg.extraConfig != "") cfg.extraConfig
-        + lib.optionalString (cfg.autostart_sh != "") "\nexec-once=~/.config/mango/autostart.sh\n";
+        + lib.optionalString (cfg.autostart_sh != "") "\nexec-once=~/.config/elderberry/autostart.sh\n";
 
-      validatedConfig = pkgs.runCommand "mango-config.conf" { } ''
-        cp ${pkgs.writeText "mango-config.conf" finalConfigText} "$out"
-        ${cfg.package}/bin/mango -c "$out" -p || exit 1
+      validatedConfig = pkgs.runCommand "elderberry-config.conf" { } ''
+        cp ${pkgs.writeText "elderberry-config.conf" finalConfigText} "$out"
+        ${cfg.package}/bin/elderberry -c "$out" -p || exit 1
       '';
     in
     {
       # Backwards compatibility warning for old string-based config
       warnings = lib.optional (builtins.isString cfg.settings) ''
-        wayland.windowManager.mango.settings: Using a string for settings is deprecated.
+        wayland.windowManager.elderberry.settings: Using a string for settings is deprecated.
         Please migrate to the new structured attribute set format.
         See the module documentation for examples, or use the 'extraConfig' option for raw config strings.
         The old string format will be removed in a future release.
@@ -246,19 +246,19 @@ in
 
       home.packages = [ cfg.package ];
       xdg.configFile = {
-        "mango/config.conf" =
+        "elderberry/config.conf" =
           lib.mkIf (cfg.settings != { } || cfg.extraConfig != "" || cfg.autostart_sh != "")
             {
               source = validatedConfig;
             };
-        "mango/autostart.sh" = lib.mkIf (cfg.autostart_sh != "") {
+        "elderberry/autostart.sh" = lib.mkIf (cfg.autostart_sh != "") {
           source = autostart_sh;
           executable = true;
         };
       };
-      systemd.user.targets.mango-session = lib.mkIf cfg.systemd.enable {
+      systemd.user.targets.elderberry-session = lib.mkIf cfg.systemd.enable {
         Unit = {
-          Description = "mango compositor session";
+          Description = "Elderberry compositor session";
           Documentation = [ "man:systemd.special(7)" ];
           BindsTo = [ "graphical-session.target" ];
           Wants = [

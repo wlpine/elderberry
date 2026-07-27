@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Elderberry
+Comment=Elderberry Wayland compositor
+Exec=/home/emi/.local/bin/elderberry
+TryExec=/home/emi/.local/bin/elderberry
+DesktopNames=elderberry;wlroots
+Type=Application

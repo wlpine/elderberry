@@ -1021,8 +1021,8 @@ void ipc_init(struct wl_event_loop *event_loop) {
 	if (!xdg_runtime)
 		return;
 
-	snprintf(ipc_socket_path, sizeof(ipc_socket_path), "%s/mango-%d.sock",
-			 xdg_runtime, getpid());
+	snprintf(ipc_socket_path, sizeof(ipc_socket_path), "%s/%s-%d.sock",
+			 xdg_runtime, PROGRAM_NAME, getpid());
 
 	ipc_sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (ipc_sock_fd < 0)
@@ -1053,7 +1053,7 @@ void ipc_init(struct wl_event_loop *event_loop) {
 	}
 	listen(ipc_sock_fd, 16);
 
-	setenv("MANGO_INSTANCE_SIGNATURE", ipc_socket_path, 1);
+	setenv("ELDERBERRY_INSTANCE_SIGNATURE", ipc_socket_path, 1);
 
 	ipc_event_source =
 		wl_event_loop_add_fd(event_loop, ipc_sock_fd, WL_EVENT_READABLE,
@@ -1066,7 +1066,7 @@ void ipc_cleanup(void) {
 	if (ipc_sock_fd >= 0)
 		close(ipc_sock_fd);
 	unlink(ipc_socket_path);
-	unsetenv("MANGO_INSTANCE_SIGNATURE");
+	unsetenv("ELDERBERRY_INSTANCE_SIGNATURE");
 
 	struct ipc_watch_client *wc, *tmp;
 	wl_list_for_each_safe(wc, tmp, &watch_clients, link)
